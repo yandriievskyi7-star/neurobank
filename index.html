@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#070913" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="НейроБанк" />
+  <title>НейроБанк — ИИ Финансы</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+    body {
+      margin: 0;
+      background-color: #070913;
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      user-select: none;
+      overflow-x: hidden;
+    }
+    @keyframes shimmer {
+      0% { transform: translateX(-150%) rotate(25deg); }
+      100% { transform: translateX(250%) rotate(25deg); }
+    }
+    .shimmer-bar {
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 60%;
+      height: 200%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
+      animation: shimmer 4.5s infinite;
+      pointer-events: none;
+    }
+    @keyframes pulseRing {
+      0%, 100% { transform: scale(1); opacity: 0.65; }
+      50% { transform: scale(1.12); opacity: 1; }
+    }
+    .ai-orb { animation: pulseRing 3s ease-in-out infinite; }
+  </style>
+</head>
+<body class="min-h-screen flex justify-center bg-[#070913]">
+
+  <div id="app" class="w-full max-w-md min-h-screen flex flex-col justify-between relative pb-24 px-4 pt-4 overflow-hidden"></div>
+
+  <script>
+    // Встраивание Web App Manifest (display: standalone) и иконки для главного экрана
+    (function setupPWA() {
+      const svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+        <defs>
+          <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#6366f1"/>
+            <stop offset="50%" stop-color="#a855f7"/>
+            <stop offset="100%" stop-color="#ec4899"/>
+          </linearGradient>
+        </defs>
+        <rect width="512" height="512" rx="120" fill="#0b0f1f"/>
+        <rect x="36" y="36" width="440" height="440" rx="96" fill="url(#g)" opacity="0.2"/>
+        <rect x="86" y="140" width="340" height="232" rx="32" fill="url(#g)"/>
+        <rect x="120" y="190" width="64" height="48" rx="10" fill="#fde047"/>
+        <circle cx="360" cy="310" r="28" fill="#ffffff" opacity="0.85"/>
+        <circle cx="330" cy="310" r="28" fill="#ffffff" opacity="0.45"/>
+      </svg>`;
+      const iconUrl = "data:image/svg+xml;utf8," + encodeURIComponent(svgIcon);
+
+      const linkIcon = document.createElement("link");
+      linkIcon.rel = "icon";
+      linkIcon.href = iconUrl;
+      document.head.appendChild(linkIcon);
+
+      const appleIcon = document.createElement("link");
+      appleIcon.rel = "apple-touch-icon";
+      appleIcon.href = iconUrl;
+      document.head.appendChild(appleIcon);
+
+      const manifest = {
+        name: "НейроБанк — ИИ Финансы",
+        short_name: "НейроБанк",
+        description: "Личный банк со встроенным ИИ-консультантом и планировщиком покупок",
+        start_url: ".",
+        display: "standalone",
+        background_color: "#070913",
+        theme_color: "#070913",
+        icons: [{ src: iconUrl, sizes: "512x512", type: "image/svg+xml", purpose: "any maskable" }]
+      };
+      const manifestBlob = new Blob([JSON.stringify(manifest)], { type: "application/manifest+json" });
+      const manifestLink = document.createElement("link");
+      manifestLink.rel = "manifest";
+      manifestLink.href = URL.createObjectURL(manifestBlob);
+      document.head.appendChild(manifestLink);
+    })();
+
+    const MONTHS = [
+      "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+      "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"
+    ];
+
+    const SKINS = {
+      onyx: {
+        name: "Кибер Оникс",
+        gradient: "from-slate-900 via-indigo-950 to-purple-950",
+        border: "border-indigo-500/40",
+        accent: "text-indigo-400"
+      },
+      aurora: {
+        name: "Изумрудная Аврора",
+        gradient: "from-emerald-950 via-teal-900 to-cyan-950",
+        border: "border-emerald-400/40",
+        accent: "text-emerald-400"
+      },
+      gold: {
+        name: "Титановое Золото",
+        gradient: "from-amber-950 via-yellow-900 to-stone-900",
+        border: "border-amber-400/40",
+        accent: "text-amber-400"
+      },
+      cobalt: {
+        name: "Квантовый Кобальт",
+        gradient: "from-blue-950 via-indigo-900 to-fuchsia-950",
+        border: "border-cyan-400/40",
+        accent: "text-cyan-400"
+      }
+    };
+
+    const STORAGE_KEY = "neurobank_standalone_v1";
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+
+    const state = saved || {
+      tab: "card",
+      monthIndex: new Date().getMonth(),
+      year: new Date().getFullYear(),
+      currency: "€",
+      balance: 0,
+      lastSalary: 0,
+      reservePercent: 30,
+      skin: "onyx",
+      cardFlipped: false,
+      currentItems: [],
+      nextMonthItems: [],
+      briefingText: "",
+      showModal: null // 'salary' | 'nextMonth' | 'addCurrent' | 'addNext' | 'skin'
+    };
+
+    function saveState() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function getSafeBudget() {
+      const reserve = Math.round((state.lastSalary * state.reservePercent) / 100);
+      return Math.max(0, state.balance - reserve);
+    }
+
+    function buildAIBriefing(isNewMonth = false) {
+      const reserve = Math.round((state.lastSalary * state.reservePercent) / 100);
+      const safeBudget = getSafeBudget();
+      const pending = state.currentItems.filter(i => !i.bought);
+
+      if (state.balance <= 0) {
+        return "Баланс равен 0. Нажмите «Внести зарплату» или «Следующий месяц», чтобы ИИ рассчитал безопасный бюджет и составил список покупок.";
+      }
+
+      if (pending.length === 0) {
+        return `${isNewMonth ? "Поздравляю с зарплатой в новом месяце! " : ""}Ваш баланс: ${state.balance} ${state.currency}. После резерва (${reserve} ${state.currency} на базовые нужды) свободно ${safeBudget} ${state.currency}. Список покупок пока пуст — добавьте цели во вкладках «Покупки» или «Планы».`;
+      }
+
+      const sorted = [...pending].sort((a, b) => (b.priority === "must" ? 1 : -1) - (a.priority === "must" ? 1 : -1) || a.price - b.price);
+      let running = 0;
+      const canBuy = [];
+      const waitList = [];
+
+      for (const item of sorted) {
+        if (running + item.price <= safeBudget) {
+          canBuy.push(item);
+          running += item.price;
+        } else {
+          waitList.push(item);
+        }
+      }
+
+      let lines = [];
+      if (isNewMonth) {
+        lines.push(`Зарплата за ${MONTHS[state.monthIndex]} получена! Все ваши планы автоматически перенесены в актуальные покупки.`);
+      }
+      lines.push(`Баланс: ${state.balance} ${state.currency} | Свободный бюджет (после резерва ${state.reservePercent}%): ${safeBudget} ${state.currency}.`);
+
+      if (canBuy.length > 0) {
+        lines.push(`✅ Можно смело покупать сейчас (${running} ${state.currency}): ${canBuy.map(i => `${i.title} (${i.price} ${state.currency})`).join(", ")}.`);
+      } else {
+        lines.push(`⚠️ Сейчас ни одна из запланированных покупок не помещается в безопасный лимит (${safeBudget} ${state.currency}).`);
+      }
+
+      if (waitList.length > 0) {
+        lines.push(`⏳ Рекомендую отложить на потом: ${waitList.map(i => `${i.title} (${i.price} ${state.currency})`).join(", ")}.`);
+      }
+
+      return lines.join("\n\n");
+    }
+
+    // Привязка действий к window
+    window.setTab = function(tab) {
+      state.tab = tab;
+      saveState();
+      render();
+    };
+
+    window.toggleCardFlip = function() {
+      state.cardFlipped = !state.cardFlipped;
+      render();
+    };
+
+    window.changeCurrency = function(curr) {
+      state.currency = curr;
+      saveState();
+      render();
+    };
+
+    window.setSkin = function(skinKey) {
+      state.skin = skinKey;
+      state.showModal = null;
+      saveState();
+      render();
+    };
+
+    window.openModal = function(type) {
+      state.showModal = type;
+      render();
+    };
+
+    window.closeModal = function() {
+      state.showModal = null;
+      render();
+    };
+
+    window.updateReserve = function(val) {
+      state.reservePercent = Number(val);
+      state.briefingText = buildAIBriefing(false);
+      saveState();
+      render();
+    };
+
+    window.submitSalary = function(e, isNewMonth) {
+      e.preventDefault();
+      const val = Number(document.getElementById("salaryInput").value);
+      if (!val || val <= 0) return;
+
+      if (isNewMonth) {
+        state.monthIndex = (state.monthIndex + 1) % 12;
+        if (state.monthIndex === 0) state.year += 1;
+        // Перенос планов следующего месяца в актуальные покупки
+        const moved = state.nextMonthItems.map(item => ({ ...item, bought: false }));
+        state.currentItems = [...state.currentItems.filter(i => !i.bought), ...moved];
+        state.nextMonthItems = [];
+      }
+
+      state.lastSalary = val;
+      state.balance += val;
+      state.briefingText = buildAIBriefing(isNewMonth);
+      state.showModal = null;
+      state.tab = "ai";
+      saveState();
+      render();
+    };
+
+    window.submitItem = function(e, targetList) {
+      e.preventDefault();
+      const title = document.getElementById("itemTitle").value.trim();
+      const price = Number(document.getElementById("itemPrice").value);
+      const priority = document.getElementById("itemPriority").value;
+      if (!title || !price || price <= 0) return;
+
+      const newItem = {
+        id: Date.now(),
+        title,
+        price,
+        priority,
+        bought: false
+      };
+
+      if (targetList === "current") {
+        state.currentItems.push(newItem);
+      } else {
+        state.nextMonthItems.push(newItem);
+      }
+
+      state.briefingText = buildAIBriefing(false);
+      state.showModal = null;
+      saveState();
+      render();
+    };
+
+    window.buyItem = function(id) {
+      const item = state.currentItems.find(i => i.id === id);
+      if (!item || item.bought) return;
+      if (state.balance < item.price) {
+        alert("Недостаточно средств на балансе карты!");
+        return;
+      }
+      state.balance -= item.price;
+      item.bought = true;
+      state.briefingText = buildAIBriefing(false);
+      saveState();
+      render();
+    };
+
+    window.deleteItem = function(id, listType) {
+      if (listType === "current") {
+        state.currentItems = state.currentItems.filter(i => i.id !== id);
+      } else {
+        state.nextMonthItems = state.nextMonthItems.filter(i => i.id !== id);
+      }
+      state.briefingText = buildAIBriefing(false);
+      saveState();
+      render();
+    };
+
+    window.refreshAI = function() {
+      state.briefingText = buildAIBriefing(false);
+      saveState();
+      render();
+    };
+
+    function render() {
+      const skin = SKINS[state.skin] || SKINS.onyx;
+      const safeBudget = getSafeBudget();
+      const reserveAmount = Math.round((state.lastSalary * state.reservePercent) / 100);
+      const nextMonthName = MONTHS[(state.monthIndex + 1) % 12];
+      const pendingCurrentTotal = state.currentItems.filter(i => !i.bought).reduce((s, i) => s + i.price, 0);
+      const nextMonthTotal = state.nextMonthItems.reduce((s, i) => s + i.price, 0);
+
+      const appEl = document.getElementById("app");
+      appEl.innerHTML = `
+        <!-- Фоновое свечение декора -->
+        <div class="pointer-events-none fixed -top-24 -left-24 w-72 h-72 rounded-full bg-indigo-600/20 blur-3xl"></div>
+        <div class="pointer-events-none fixed top-1/3 -right-24 w-72 h-72 rounded-full bg-fuchsia-600/15 blur-3xl"></div>
+
+        <!-- Верхняя шапка -->
+        <div>
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <div class="text-xs uppercase tracking-widest text-slate-400">НейроБанк • ${MONTHS[state.monthIndex]} ${state.year}</div>
+              <div class="text-lg font-bold tracking-tight text-white">Личный ИИ-Банкир</div>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="openModal('skin')" class="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs font-medium text-indigo-300 hover:bg-white/10">
+                🎨 Декор
+              </button>
+              <select onchange="changeCurrency(this.value)" class="bg-white/5 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none">
+                ${["€", "₴", "$", "₽"].map(c => `<option value="${c}" ${state.currency === c ? "selected" : ""} class="bg-slate-900">${c}</option>`).join("")}
+              </select>
+            </div>
+          </div>
+
+          <!-- Вкладка: КАРТА -->
+          ${state.tab === "card" ? `
+            <!-- 3D Карта с переворотом -->
+            <div onclick="toggleCardFlip()" class="cursor-pointer relative overflow-hidden rounded-3xl p-6 bg-gradient-to-br ${skin.gradient} border ${skin.border} shadow-2xl mb-5 transition-transform active:scale-[0.99]">
+              <div class="shimmer-bar"></div>
+              ${!state.cardFlipped ? `
+                <div class="flex justify-between items-start mb-6">
+                  <div>
+                    <div class="text-[11px] uppercase tracking-widest text-white/60">NeuroCard Platinum</div>
+                    <div class="text-3xl font-extrabold text-white mt-1">${state.balance.toLocaleString()} ${state.currency}</div>
+                  </div>
+                  <div class="text-xs px-2.5 py-1 rounded-full bg-white/10 border border-white/15 text-white/90">${skin.name}</div>
+                </div>
+                <div class="flex items-center justify-between my-4">
+                  <div class="w-11 h-8 rounded-md bg-gradient-to-br from-amber-200 to-amber-500 border border-amber-100/50 shadow-inner"></div>
+                  <div class="text-xs text-white/60 font-mono">NFC •••• 4092</div>
+                </div>
+                <div class="flex justify-between items-end text-xs text-white/75 pt-2 border-t border-white/10">
+                  <div>Зарплата: <span class="font-semibold text-white">${state.lastSalary.toLocaleString()} ${state.currency}</span></div>
+                  <div>Свободно: <span class="font-semibold text-emerald-300">${safeBudget.toLocaleString()} ${state.currency}</span></div>
+                </div>
+              ` : `
+                <div class="py-2">
+                  <div class="w-full h-9 bg-black/70 rounded my-2"></div>
+                  <div class="flex justify-between items-center mt-4 px-3 py-2 bg-white/10 rounded-lg font-mono text-xs">
+                    <span>CVV: 884</span>
+                    <span>NEURO-AI-PROTECTED</span>
+                  </div>
+                  <div class="text-[11px] text-white/60 mt-4 text-center">Нажмите на карту, чтобы повернуть обратно</div>
+                </div>
+              `}
+            </div>
+
+            <!-- Кнопки управления зарплатой и месяцем -->
+            <div class="grid grid-cols-2 gap-3 mb-5">
+              <button onclick="openModal('salary')" class="py-3.5 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm shadow-lg shadow-indigo-600/30">
+                + Внести зарплату
+              </button>
+              <button onclick="openModal('nextMonth')" class="py-3.5 px-4 rounded-2xl bg-gradient-to-r from-fuchsia-600 to-purple-600 text-white font-semibold text-sm shadow-lg shadow-fuchsia-600/25">
+                Следующий месяц →
+              </button>
+            </div>
+
+            <!-- Финансовый радар и резерв -->
+            <div class="rounded-3xl bg-white/[0.04] border border-white/10 p-4 mb-4">
+              <div class="flex justify-between items-center mb-2">
+                <span class="text-xs font-semibold uppercase tracking-wider text-slate-300">Финансовый радар</span>
+                <span class="text-xs ${skin.accent}">Резерв: ${state.reservePercent}% (${reserveAmount} ${state.currency})</span>
+              </div>
+              <input type="range" min="0" max="70" step="5" value="${state.reservePercent}" onchange="updateReserve(this.value)" class="w-full accent-indigo-500 mb-3" />
+              <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                <div class="p-2.5 rounded-2xl bg-white/5">
+                  <div class="text-slate-400">Свободно</div>
+                  <div class="font-bold text-emerald-400 mt-0.5">${safeBudget} ${state.currency}</div>
+                </div>
+                <div class="p-2.5 rounded-2xl bg-white/5">
+                  <div class="text-slate-400">В этом мес.</div>
+                  <div class="font-bold text-indigo-300 mt-0.5">${pendingCurrentTotal} ${state.currency}</div>
+                </div>
+                <div class="p-2.5 rounded-2xl bg-white/5">
+                  <div class="text-slate-400">На ${nextMonthName}</div>
+                  <div class="font-bold text-fuchsia-300 mt-0.5">${nextMonthTotal} ${state.currency}</div>
+                </div>
+              </div>
+            </div>
+          ` : ""}
+
+          <!-- Вкладка: ПОКУПКИ ТЕКУЩЕГО МЕСЯЦА -->
+          ${state.tab === "items" ? `
+            <div class="flex justify-between items-center mb-4">
+              <div>
+                <h2 class="text-base font-bold">Покупки на ${MONTHS[state.monthIndex]}</h2>
+                <p class="text-xs text-slate-400">Доступно без риска: ${safeBudget} ${state.currency}</p>
+              </div>
+              <button onclick="openModal('addCurrent')" class="px-3.5 py-2 rounded-xl bg-indigo-600 text-xs font-semibold text-white">+ Добавить</button>
+            </div>
+            <div class="space-y-2.5">
+              ${state.currentItems.length === 0 ? `
+                <div class="text-center py-12 rounded-3xl bg-white/[0.03] border border-white/10 text-slate-400 text-sm">
+                  Список покупок на этот месяц пуст.
+                </div>
+              ` : state.currentItems.map(item => `
+                <div class="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-between">
+                  <div>
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm font-semibold ${item.bought ? 'line-through text-slate-500' : 'text-white'}">${item.title}</span>
+                      <span class="text-[10px] px-2 py-0.5 rounded-full ${item.priority === 'must' ? 'bg-rose-500/20 text-rose-300' : 'bg-cyan-500/20 text-cyan-300'}">
+                        ${item.priority === 'must' ? 'Обязательно' : 'Желаемое'}
+                      </span>
+                    </div>
+                    <div class="text-xs text-slate-400 mt-1">${item.price} ${state.currency}</div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    ${!item.bought ? `
+                      <button onclick="buyItem(${item.id})" class="px-3 py-1.5 rounded-xl bg-emerald-600/80 hover:bg-emerald-500 text-xs font-semibold">Купить</button>
+                    ` : `<span class="text-xs text-emerald-400 font-medium">Куплено ✓</span>`}
+                    <button onclick="deleteItem(${item.id}, 'current')" class="p-1.5 text-slate-400 hover:text-rose-400 text-xs">✕</button>
+                  </div>
+                </div>
+              `).join("")}
+            </div>
+          ` : ""}
+
+          <!-- Вкладка: ПЛАНЫ НА СЛЕДУЮЩИЙ МЕСЯЦ -->
+          ${state.tab === "plans" ? `
+            <div class="flex justify-between items-center mb-4">
+              <div>
+                <h2 class="text-base font-bold">Планы на ${nextMonthName}</h2>
+                <p class="text-xs text-slate-400">ИИ напомнит о них при следующей зарплате</p>
+              </div>
+              <button onclick="openModal('addNext')" class="px-3.5 py-2 rounded-xl bg-fuchsia-600 text-xs font-semibold text-white">+ В план</button>
+            </div>
+            <div class="space-y-2.5">
+              ${state.nextMonthItems.length === 0 ? `
+                <div class="text-center py-12 rounded-3xl bg-white/[0.03] border border-white/10 text-slate-400 text-sm">
+                  Запишите сюда всё, что планируете купить в следующем месяце.
+                </div>
+              ` : state.nextMonthItems.map(item => `
+                <div class="p-3.5 rounded-2xl bg-white/[0.04] border border-fuchsia-500/20 flex items-center justify-between">
+                  <div>
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm font-semibold text-white">${item.title}</span>
+                      <span class="text-[10px] px-2 py-0.5 rounded-full ${item.priority === 'must' ? 'bg-rose-500/20 text-rose-300' : 'bg-fuchsia-500/20 text-fuchsia-300'}">
+                        ${item.priority === 'must' ? 'Обязательно' : 'Желаемое'}
+                      </span>
+                    </div>
+                    <div class="text-xs text-slate-400 mt-1">${item.price} ${state.currency} • План на ${nextMonthName}</div>
+                  </div>
+                  <button onclick="deleteItem(${item.id}, 'next')" class="p-1.5 text-slate-400 hover:text-rose-400 text-xs">✕</button>
+                </div>
+              `).join("")}
+            </div>
+          ` : ""}
+
+          <!-- Вкладка: ИИ-БАНКИР -->
+          ${state.tab === "ai" ? `
+            <div class="rounded-3xl bg-gradient-to-b from-indigo-950/60 to-slate-900/80 border border-indigo-500/30 p-5 text-center mb-4">
+              <div class="w-16 h-16 mx-auto mb-3 rounded-full bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/40 ai-orb">
+                <span class="text-2xl">🤖</span>
+              </div>
+              <h2 class="text-base font-bold">Зарплатный ИИ-Брифинг</h2>
+              <p class="text-xs text-slate-400 mt-0.5">Персональный расчёт покупок по вашему балансу</p>
+              <div class="mt-4 text-left text-xs leading-relaxed bg-black/40 border border-white/10 rounded-2xl p-4 whitespace-pre-line text-slate-200">${state.briefingText || buildAIBriefing(false)}</div>
+              <button onclick="refreshAI()" class="mt-4 w-full py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white">
+                Что мне купить сейчас? (Пересчитать)
+              </button>
+            </div>
+          ` : ""}
+        </div>
+
+        <!-- Модальные окна -->
+        ${state.showModal ? `
+          <div class="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-4">
+            <div class="w-full max-w-md rounded-3xl bg-slate-900 border border-white/15 p-5">
+              ${state.showModal === "salary" || state.showModal === "nextMonth" ? `
+                <h3 class="text-base font-bold mb-1">
+                  ${state.showModal === "nextMonth" ? `Переход в ${nextMonthName} и зарплата` : `Внести доход за ${MONTHS[state.monthIndex]}`}
+                </h3>
+                <p class="text-xs text-slate-400 mb-4">
+                  ${state.showModal === "nextMonth"
+                    ? `Планы (${state.nextMonthItems.length} шт.) станут актуальными покупками, и ИИ сразу скажет, что можно купить.`
+                    : "Укажите полученную сумму, чтобы ИИ пересчитал рекомендации."}
+                </p>
+                <form onsubmit="submitSalary(event, ${state.showModal === 'nextMonth'})" class="space-y-3">
+                  <input id="salaryInput" type="number" placeholder="Сумма (${state.currency})" required class="w-full px-4 py-3 rounded-2xl bg-white/5 border border-white/15 text-white outline-none" />
+                  <div class="flex gap-2">
+                    <button type="button" onclick="closeModal()" class="flex-1 py-3 rounded-2xl bg-white/5 text-xs font-semibold">Отмена</button>
+                    <button type="submit" class="flex-1 py-3 rounded-2xl bg-indigo-600 text-xs font-semibold text-white">Рассчитать с ИИ</button>
+                  </div>
+                </form>
+              ` : ""}
+
+              ${state.showModal === "addCurrent" || state.showModal === "addNext" ? `
+                <h3 class="text-base font-bold mb-3">
+                  ${state.showModal === "addCurrent" ? `Новая покупка (${MONTHS[state.monthIndex]})` : `План на ${nextMonthName}`}
+                </h3>
+                <form onsubmit="submitItem(event, '${state.showModal === "addCurrent" ? "current" : "next"}')" class="space-y-3">
+                  <input id="itemTitle" type="text" placeholder="Название покупки" required class="w-full px-4 py-3 rounded-2xl bg-white/5 border border-white/15 text-white text-sm outline-none" />
+                  <input id="itemPrice" type="number" placeholder="Цена (${state.currency})" required class="w-full px-4 py-3 rounded-2xl bg-white/5 border border-white/15 text-white text-sm outline-none" />
+                  <select id="itemPriority" class="w-full px-4 py-3 rounded-2xl bg-slate-800 border border-white/15 text-white text-sm outline-none">
+                    <option value="must">Приоритет: Обязательно</option>
+                    <option value="want">Приоритет: Желаемое</option>
+                  </select>
+                  <div class="flex gap-2">
+                    <button type="button" onclick="closeModal()" class="flex-1 py-3 rounded-2xl bg-white/5 text-xs font-semibold">Отмена</button>
+                    <button type="submit" class="flex-1 py-3 rounded-2xl bg-indigo-600 text-xs font-semibold text-white">Сохранить</button>
+                  </div>
+                </form>
+              ` : ""}
+
+              ${state.showModal === "skin" ? `
+                <h3 class="text-base font-bold mb-3">Студия декора карты</h3>
+                <div class="grid grid-cols-1 gap-2 mb-3">
+                  ${Object.entries(SKINS).map(([key, s]) => `
+                    <button onclick="setSkin('${key}')" class="p-3 rounded-2xl bg-gradient-to-r ${s.gradient} border ${s.border} text-left flex justify-between items-center">
+                      <span class="text-xs font-bold text-white">${s.name}</span>
+                      ${state.skin === key ? `<span class="text-xs text-emerald-300">Активен ✓</span>` : ""}
+                    </button>
+                  `).join("")}
+                </div>
+                <button onclick="closeModal()" class="w-full py-2.5 rounded-2xl bg-white/5 text-xs font-semibold">Закрыть</button>
+              ` : ""}
+            </div>
+          </div>
+        ` : ""}
+
+        <!-- Нижняя панель навигации -->
+        <nav class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-[#0b0f1f]/95 backdrop-blur-md border-t border-white/10 px-4 py-2.5 grid grid-cols-4 gap-1 z-40">
+          <button onclick="setTab('card')" class="flex flex-col items-center py-1 rounded-xl ${state.tab === 'card' ? 'text-indigo-400 font-semibold' : 'text-slate-400'} text-[11px]">
+            <span class="text-base">💳</span>
+            <span>Карта</span>
+          </button>
+          <button onclick="setTab('items')" class="flex flex-col items-center py-1 rounded-xl ${state.tab === 'items' ? 'text-indigo-400 font-semibold' : 'text-slate-400'} text-[11px]">
+            <span class="text-base">🛍️</span>
+            <span>Покупки (${state.currentItems.filter(i => !i.bought).length})</span>
+          </button>
+          <button onclick="setTab('plans')" class="flex flex-col items-center py-1 rounded-xl ${state.tab === 'plans' ? 'text-fuchsia-400 font-semibold' : 'text-slate-400'} text-[11px]">
+            <span class="text-base">📅</span>
+            <span>Планы (${state.nextMonthItems.length})</span>
+          </button>
+          <button onclick="setTab('ai')" class="flex flex-col items-center py-1 rounded-xl ${state.tab === 'ai' ? 'text-emerald-400 font-semibold' : 'text-slate-400'} text-[11px]">
+            <span class="text-base">🤖</span>
+            <span>ИИ-Банкир</span>
+          </button>
+        </nav>
+      `;
+    }
+
+    render();
+  </script>
+</body>
+</html>
